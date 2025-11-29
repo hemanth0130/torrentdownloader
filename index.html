@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>torrentDownloader — Paste magnet or upload .torrent</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- Inter -->
+  <!-- Inter font -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -28,6 +28,10 @@
 
   <style>
     .line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    /* Ensure long input doesn't push the button out on small screens */
+    @media (max-width: 480px) {
+      .input-row { gap: 8px; }
+    }
   </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
@@ -56,13 +60,15 @@
       <p class="mt-2 text-xs text-slate-500">Tip: You can paste a <span class="font-medium">magnet:?xt=urn:btih:</span> link below, or upload a <code class="text-xs px-1 py-0.5 rounded bg-slate-800">.torrent</code> file.</p>
     </section>
 
-    <!-- Paste / upload card -->
+    <!-- Paste / upload card (legal notice removed per request) -->
     <section class="mb-6">
       <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
         <label class="block text-xs text-slate-400 mb-2">Paste Magnet Link or Info Hash</label>
-        <div class="flex gap-2">
+
+        <!-- Important: use a row where button is fixed width and cannot be pushed out -->
+        <div class="flex input-row items-center">
           <input id="magnetInput" type="text" inputmode="url" placeholder="magnet:?xt=urn:btih:..." class="flex-1 h-12 rounded-xl bg-slate-900 border border-slate-800 px-4 text-sm text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-accent/50" />
-          <button id="addMagnetBtn" class="h-12 px-4 rounded-xl bg-accent text-slate-950 font-semibold">Add</button>
+          <button id="addMagnetBtn" class="ml-2 flex-shrink-0 min-w-[72px] h-12 px-3 rounded-xl bg-accent text-slate-950 font-semibold">Add</button>
         </div>
 
         <div class="mt-4">
@@ -74,10 +80,6 @@
             <div class="ml-auto text-xs text-slate-500">Runs in your browser</div>
           </div>
         </div>
-
-        <div class="mt-3 text-xs text-amber-300 bg-amber-900/10 px-3 py-2 rounded">
-          <strong>Legal notice:</strong> Only download content you are allowed to. I cannot help you find copyrighted material.
-        </div>
       </div>
     </section>
 
@@ -85,7 +87,7 @@
     <section id="activeArea" class="mb-6 hidden">
       <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
-          <div>
+          <div class="min-w-0">
             <h2 id="torrentName" class="text-sm font-semibold text-slate-100 line-clamp-2">Adding...</h2>
             <div id="torrentStats" class="text-xs text-slate-400 mt-1">Waiting for metadata...</div>
           </div>
@@ -105,7 +107,7 @@
       </div>
     </section>
 
-    <!-- Simulated results -->
+    <!-- Simulated results (kept for discovery) -->
     <main aria-live="polite">
       <div id="resultsList" class="space-y-3"></div>
       <div id="emptyState" class="hidden mt-10 text-center text-slate-500">No torrents match your search. Try different keywords.</div>
@@ -114,14 +116,13 @@
 
 <script>
 /* =========================
-   Data, UI bindings
+   Core data + UI
    ========================= */
 
 const sampleTorrents = [
   { title:'The Last Frontier - S01E01 - 1080p WEBRip [YTS]', size:'1.5 GB', type:'TV / Series', seeders:5421, leechers:12, hash:'9F2A0B3D8C4F7E91A2B3C4D5E6F7A8B9C0D1E2F' },
   { title:'Interstellar (2014) 2160p UHD BluRay x265 [YTS]', size:'19.4 GB', type:'Movie', seeders:8322, leechers:71, hash:'7E1F9A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F' },
   { title:'Ubuntu 24.04 LTS Desktop ISO x64', size:'4.2 GB', type:'Software / OS', seeders:12014, leechers:89, hash:'4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1F2A3B' },
-  // ... more
 ];
 
 const resultsList = document.getElementById('resultsList');
@@ -146,7 +147,7 @@ let client = null;
 let activeTorrent = null;
 let metadataTimer = null;
 
-/* Recommended WSS trackers (WebRTC) — used for building magnet if only info-hash provided */
+/* WSS trackers for WebRTC */
 const DEFAULT_WSS_TRACKERS = [
   'wss://tracker.openwebtorrent.com',
   'wss://tracker.btorrent.xyz',
@@ -156,52 +157,30 @@ const DEFAULT_WSS_TRACKERS = [
   'wss://tracker.skyts.net',
 ];
 
-/* Utility: try to normalize input to a magnet URI.
-   Acceptable inputs:
-    - full magnet:?xt=urn:btih:<hash>&dn=...
-    - bare hex infohash (40 hex) or base32 (32 chars)
-*/
+/* normalize input to magnet if it's just an info-hash */
 function normalizeToMagnet(input) {
   if (!input) return null;
   input = input.trim();
-
-  // if it already looks like a magnet, return as-is
   if (/^magnet:\?/i.test(input)) return input;
-
-  // remove surrounding <> or quotes
   input = input.replace(/^<|>$/g, '').replace(/^"|"$/g, '');
-
-  // if input looks like a hex infohash (length 40, hex)
   const hexMatch = input.match(/^[0-9a-fA-F]{40}$/);
   const base32Match = input.match(/^[A-Z2-7]{32}$/i);
-
-  if (hexMatch) {
-    // build magnet with trackers
+  if (hexMatch || base32Match) {
     const trackers = DEFAULT_WSS_TRACKERS.map(t => `&tr=${encodeURIComponent(t)}`).join('');
     return `magnet:?xt=urn:btih:${input}${trackers}`;
   }
-  if (base32Match) {
-    const trackers = DEFAULT_WSS_TRACKERS.map(t => `&tr=${encodeURIComponent(t)}`).join('');
-    return `magnet:?xt=urn:btih:${input}${trackers}`;
-  }
-
-  // otherwise not a valid magnet or info-hash
   return null;
 }
 
-/* Build magnet from sample data */
 function buildMagnetForSample(t) {
   const trackers = DEFAULT_WSS_TRACKERS.map(tk => `&tr=${encodeURIComponent(tk)}`).join('');
   return `magnet:?xt=urn:btih:${t.hash}&dn=${encodeURIComponent(t.title)}${trackers}`;
 }
 
-/* Render simulated results (cards) */
+/* Render simulated results */
 function renderResults(list) {
   resultsList.innerHTML = '';
-  if (!list.length) {
-    emptyState.classList.remove('hidden');
-    return;
-  }
+  if (!list.length) { emptyState.classList.remove('hidden'); return; }
   emptyState.classList.add('hidden');
 
   list.forEach(t => {
@@ -225,39 +204,32 @@ function renderResults(list) {
     `;
     resultsList.appendChild(card);
 
-    // wire buttons
     const copyBtn = card.querySelector('.copy-btn');
     copyBtn.dataset.magnet = buildMagnetForSample(t);
     copyBtn.addEventListener('click', () => copyToClipboard(copyBtn.dataset.magnet, copyBtn));
 
     const addBtn = card.querySelector('.add-btn');
-    addBtn.addEventListener('click', () => {
-      // add the sample magnet to the client directly
-      startAddMagnet(buildMagnetForSample(t));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
+    addBtn.addEventListener('click', () => { startAddMagnet(buildMagnetForSample(t)); window.scrollTo({ top: 0, behavior: 'smooth' }); });
   });
 
   attachCopyHandlers();
 }
 
-/* Basic XSS-safe text escape */
+/* escaping */
 function escapeHtml(s){ return (s+'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* Copy helpers */
 function showCopyFeedback(button) {
-  const originalText = button.textContent.trim();
-  const originalClass = button.className;
+  const orig = button.textContent.trim();
+  const origClass = button.className;
   button.textContent = 'Copied!';
   button.className = 'inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-3 text-xs font-semibold text-slate-950';
-  setTimeout(()=> { button.textContent = originalText; button.className = originalClass; }, 1100);
+  setTimeout(()=> { button.textContent = orig; button.className = origClass; }, 1100);
 }
 function fallbackCopy(text, button) {
-  const ta = document.createElement('textarea');
-  ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); showCopyFeedback(button); } catch(e){ alert('Copy failed.'); }
+  const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); showCopyFeedback(button); } catch(e) { alert('Copy failed.'); }
   document.body.removeChild(ta);
 }
 function copyToClipboard(text, button) {
@@ -267,11 +239,9 @@ function copyToClipboard(text, button) {
   } else fallbackCopy(text, button);
 }
 function attachCopyHandlers() {
-  const buttons = document.querySelectorAll('.copy-btn');
-  buttons.forEach(btn => {
+  document.querySelectorAll('.copy-btn').forEach(btn => {
     btn.addEventListener('click', ()=> {
-      const m = btn.dataset.magnet;
-      if (m) copyToClipboard(m, btn);
+      copyToClipboard(btn.dataset.magnet, btn);
     });
   });
 }
@@ -291,20 +261,13 @@ renderResults(sampleTorrents);
 
 function ensureClient() {
   if (!client) {
-    try {
-      client = new WebTorrent();
-    } catch (e) {
-      console.error('WebTorrent init error', e);
-      alert('WebTorrent could not initialize in this environment.');
-    }
+    try { client = new WebTorrent(); } catch (e) { console.error('WebTorrent init', e); alert('WebTorrent unavailable in this environment.'); }
   }
 }
 
-/* Start adding a magnet (public API used by UI) */
 function startAddMagnet(rawInput) {
   const magnet = normalizeToMagnet(rawInput) || rawInput;
   if (!magnet || !magnet.startsWith('magnet:?')) {
-    // if it's a likely info-hash trimmed/short, show friendly error
     metaNotice.classList.remove('hidden');
     metaNotice.textContent = 'Invalid magnet or info-hash. Please paste a full magnet:? link or upload a .torrent file.';
     return;
@@ -312,16 +275,12 @@ function startAddMagnet(rawInput) {
   addTorrent(magnet);
 }
 
-/* Add a torrent (magnet string or torrent buffer / file) */
+/* Add torrent but DO NOT auto-download files. Files are deselected by default and only start when user taps Download. */
 function addTorrent(magnetOrBuffer) {
   ensureClient();
   if (!client) return;
 
-  // clear previous
-  if (activeTorrent) {
-    try { activeTorrent.destroy(); } catch(e) {}
-    activeTorrent = null;
-  }
+  if (activeTorrent) { try { activeTorrent.destroy(); } catch(e){} activeTorrent = null; }
   clearMetadataTimer();
 
   activeArea.classList.remove('hidden');
@@ -332,11 +291,10 @@ function addTorrent(magnetOrBuffer) {
   progressBar.style.width = '0%';
   peerCountEl.textContent = 'Peers: 0';
 
-  // Start metadata timeout (20s) — if no metadata, inform the user
   metadataTimer = setTimeout(()=> {
     if (activeTorrent && activeTorrent.files && activeTorrent.files.length) return;
     metaNotice.classList.remove('hidden');
-    metaNotice.innerHTML = 'Unable to fetch metadata / connect to peers within 20s. Try uploading the .torrent file or try a native client.';
+    metaNotice.textContent = 'Unable to fetch metadata / connect to peers within 20s. Try uploading the .torrent file or try a native client.';
   }, 20000);
 
   try {
@@ -344,19 +302,28 @@ function addTorrent(magnetOrBuffer) {
       activeTorrent = torrent;
       torrentNameEl.textContent = torrent.name || 'Unnamed torrent';
       updateStats();
-      peerCountEl.textContent = `Peers: ${torrent.numPeers}`;
+      peerCountEl.textContent = `Peers: ${torrent.numPeers || 0}`;
 
-      // If metadata already available, show files; else display fetching message until torrent emits 'metadata'
-      if (torrent.files && torrent.files.length) {
+      // When metadata is present, we'll display files, but ensure we DO NOT auto-select/download pieces:
+      const onHaveMetadata = () => {
+        // Deselect all files to prevent automatic download in browser:
+        try {
+          if (torrent.files && torrent.files.length) {
+            torrent.files.forEach(f => {
+              // some file objects expose deselect(); call safely if present
+              if (typeof f.deselect === 'function') {
+                try { f.deselect(); } catch(e) {}
+              }
+            });
+          }
+        } catch(e) { console.warn('deselect error', e); }
+
         populateFiles(torrent);
         clearMetadataTimer();
-      } else {
-        torrentStatsEl.textContent = 'Fetching metadata...';
-        torrent.on('metadata', () => {
-          populateFiles(torrent);
-          clearMetadataTimer();
-        });
-      }
+      };
+
+      if (torrent.files && torrent.files.length) onHaveMetadata();
+      else torrent.on('metadata', onHaveMetadata);
 
       // progress updates
       const updater = setInterval(() => {
@@ -366,16 +333,11 @@ function addTorrent(magnetOrBuffer) {
 
       torrent.on('done', () => {
         progressBar.style.width = '100%';
-        torrentStatsEl.textContent = `Completed • Peers: ${torrent.numPeers}`;
+        torrentStatsEl.textContent = `Completed • Peers: ${torrent.numPeers || 0}`;
         clearInterval(updater);
       });
 
       torrent.on('wire', () => updateStats());
-      torrent.on('noPeers', () => {
-        // Note: WebTorrent may not emit this reliably in browser — fallback handled by metadata timeout
-        metaNotice.classList.remove('hidden');
-        metaNotice.textContent = 'No peers found (or WebRTC connectivity blocked). Upload the .torrent file or use a native client for better connectivity.';
-      });
     });
   } catch (err) {
     console.error('Add torrent error', err);
@@ -385,13 +347,15 @@ function addTorrent(magnetOrBuffer) {
   }
 }
 
-function clearMetadataTimer() {
-  if (metadataTimer) { clearTimeout(metadataTimer); metadataTimer = null; }
-}
+function clearMetadataTimer() { if (metadataTimer) { clearTimeout(metadataTimer); metadataTimer = null; } }
 
-/* Populate files list with download buttons */
 function populateFiles(torrent) {
   filesList.innerHTML = '';
+  if (!torrent.files || !torrent.files.length) {
+    filesList.innerHTML = '<div class="text-xs text-slate-400">No files in this torrent.</div>';
+    return;
+  }
+
   torrent.files.forEach(file => {
     const row = document.createElement('div');
     row.className = 'flex items-center justify-between gap-3 bg-slate-900/70 p-3 rounded-xl border border-slate-800';
@@ -411,13 +375,20 @@ function populateFiles(torrent) {
       dlBtn.disabled = true;
       dlBtn.textContent = 'Preparing...';
 
-      // file.getBlob may use memory for whole file — for big files this can be an issue; we try and show error if fails.
+      // Before requesting blob, select the file to fetch pieces
+      try {
+        if (typeof file.select === 'function') {
+          try { file.select(); } catch(e){ console.warn('file.select failed', e); }
+        }
+      } catch(e) { console.warn('select error', e); }
+
+      // Download to blob then offer for saving
       try {
         file.getBlob((err, blob) => {
           if (err || !blob) {
             console.error('getBlob error', err);
             dlBtn.textContent = 'Failed';
-            setTimeout(()=> { dlBtn.disabled = false; dlBtn.textContent = 'Download'; }, 1400);
+            setTimeout(()=> { dlBtn.disabled=false; dlBtn.textContent='Download'; }, 1400);
             return;
           }
           const url = URL.createObjectURL(blob);
@@ -429,18 +400,17 @@ function populateFiles(torrent) {
           a.remove();
           URL.revokeObjectURL(url);
           dlBtn.textContent = 'Saved';
-          setTimeout(()=> { dlBtn.disabled = false; dlBtn.textContent = 'Download'; }, 1200);
+          setTimeout(()=> { dlBtn.disabled=false; dlBtn.textContent='Download'; }, 1200);
         });
       } catch (e) {
         console.error('download exception', e);
         dlBtn.textContent = 'Error';
-        setTimeout(()=> { dlBtn.disabled = false; dlBtn.textContent = 'Download'; }, 1200);
+        setTimeout(()=> { dlBtn.disabled=false; dlBtn.textContent='Download'; }, 1200);
       }
     });
   });
 }
 
-/* Update UI stats */
 function updateStats() {
   if (!activeTorrent) return;
   const t = activeTorrent;
@@ -461,28 +431,21 @@ function formatSpeed(bytesPerSec) {
 
 /* Stop / destroy */
 destroyBtn.addEventListener('click', () => {
-  if (activeTorrent) {
-    try { activeTorrent.destroy(); } catch(e) {}
-    activeTorrent = null;
-  }
+  if (activeTorrent) { try { activeTorrent.destroy(); } catch(e){} activeTorrent = null; }
   progressBar.style.width = '0%';
   filesList.innerHTML = '';
   activeArea.classList.add('hidden');
   metaNotice.classList.add('hidden');
 });
 
-/* Magnet UI handlers */
+/* UI handlers */
 addMagnetBtn.addEventListener('click', () => {
   const raw = magnetInput.value.trim();
   if (!raw) { magnetInput.focus(); return; }
   startAddMagnet(raw);
 });
+magnetInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addMagnetBtn.click(); });
 
-magnetInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') addMagnetBtn.click();
-});
-
-/* File chooser handlers */
 chooseFileBtn.addEventListener('click', () => torrentFileInput.click());
 torrentFileInput.addEventListener('change', (ev) => {
   const f = ev.target.files && ev.target.files[0];
@@ -500,13 +463,10 @@ torrentFileInput.addEventListener('change', (ev) => {
   reader.readAsArrayBuffer(f);
 });
 
-/* Clipboard paste support: when user pastes a magnet into input they'll click Add.
-   No hidden paste handling to keep behavior explicit and safe. */
-
-/* Cleanup on unload */
+/* cleanup */
 window.addEventListener('beforeunload', () => {
-  if (activeTorrent) try { activeTorrent.destroy(); } catch(e) {}
-  if (client) try { client.destroy(); } catch(e) {}
+  if (activeTorrent) try { activeTorrent.destroy(); } catch(e){}
+  if (client) try { client.destroy(); } catch(e){}
 });
 </script>
 </body>
