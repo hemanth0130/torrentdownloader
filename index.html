@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>VortexLink – Browser Torrent Download (Client-side)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <!-- Inter font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+  <!-- Tailwind + config -->
+  <script>
+    tailwind = window.tailwind || {};
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter','system-ui','-apple-system','BlinkMacSystemFont','sans-serif'] },
+          colors: { accent: { DEFAULT: '#38bdf8' } },
+          boxShadow: { 'soft': '0 18px 45px rgba(0,0,0,0.6)' }
+        }
+      }
+    };
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- WebTorrent (browser) -->
+  <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
+
+  <style>
+    /* tiny helpers */
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+  <div class="max-w-4xl mx-auto p-4 pb-10">
+    <!-- Header -->
+    <header class="flex items-center justify-between gap-4 mb-6">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-accent to-sky-500 flex items-center justify-center shadow-soft">
+          <span class="text-xs font-bold uppercase">VL</span>
+        </div>
+        <div>
+          <h1 class="text-xl font-semibold">Vortex<span class="text-accent">Link</span></h1>
+          <p class="text-xs text-slate-400">Paste magnet or upload .torrent — download in-browser (WebTorrent)</p>
+        </div>
+      </div>
+      <div class="text-xs text-slate-400 rounded-full bg-slate-900/60 px-3 py-2 border border-slate-700">Client-side · No backend</div>
+    </header>
+
+    <!-- Search / Paste Area -->
+    <section class="mb-6">
+      <label for="searchInput" class="sr-only">Search torrents</label>
+      <div class="relative">
+        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+          <svg class="h-5 w-5 text-slate-500" viewBox="0 0 24 24" fill="none"><path d="M15.5 15.5L20 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.6"/></svg>
+        </div>
+        <input id="searchInput" type="search" placeholder="Search 15 Million+ verified links..." class="w-full h-12 rounded-full bg-slate-900/90 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-500 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-accent/60" />
+      </div>
+      <p class="mt-2 text-xs text-slate-500">Tip: You can paste a <span class="font-medium">magnet:?xt=urn:btih:</span> link below, or upload a <code class="text-xs px-1 py-0.5 rounded bg-slate-800">.torrent</code> file.</p>
+    </section>
+
+    <!-- Paste or upload area -->
+    <section class="mb-6">
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+        <label class="block text-xs text-slate-400 mb-2">Paste Magnet Link</label>
+        <div class="flex gap-2">
+          <input id="magnetInput" type="text" inputmode="url" placeholder="Paste magnet link here..." class="flex-1 h-12 rounded-xl bg-slate-900 border border-slate-800 px-4 text-sm text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-accent/50" />
+          <button id="addMagnetBtn" class="h-12 px-4 rounded-xl bg-accent text-slate-950 font-semibold">Add</button>
+        </div>
+
+        <div class="mt-4">
+          <label class="block text-xs text-slate-400 mb-2">Or upload a .torrent file</label>
+          <div class="flex gap-2 items-center">
+            <input id="torrentFile" type="file" accept=".torrent" class="hidden" />
+            <button id="chooseFileBtn" class="h-12 px-4 rounded-xl bg-slate-800 border border-slate-700 text-sm text-slate-200">Choose File</button>
+            <div id="fileLabel" class="text-xs text-slate-400">No file chosen</div>
+            <div class="ml-auto text-xs text-slate-500">Secure: runs in your browser</div>
+          </div>
+        </div>
+
+        <div class="mt-3 text-xs text-amber-300 bg-amber-900/10 px-3 py-2 rounded">
+          <strong>Legal notice:</strong> Only download content you are allowed to. I cannot help you find copyrighted material.
+        </div>
+      </div>
+    </section>
+
+    <!-- Active torrent / progress area -->
+    <section id="activeArea" class="mb-6 hidden">
+      <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <div id="torrentMeta" class="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 id="torrentName" class="text-sm font-semibold text-slate-100 line-clamp-2"></h2>
+            <div class="text-xs text-slate-400 mt-1" id="torrentStats"></div>
+          </div>
+          <div class="text-right">
+            <div id="peerCount" class="text-xs text-slate-400">Peers: 0</div>
+            <button id="destroyBtn" class="mt-2 text-xs px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">Stop</button>
+          </div>
+        </div>
+
+        <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+          <div id="progressBar" class="h-3 bg-accent w-0 transition-all"></div>
+        </div>
+
+        <div id="filesList" class="mt-4 space-y-3"></div>
+      </div>
+    </section>
+
+    <!-- Results (simulated) -->
+    <main aria-live="polite">
+      <div id="resultsList" class="space-y-3"></div>
+      <div id="emptyState" class="hidden mt-10 text-center text-slate-500">No torrents match your search. Try different keywords.</div>
+    </main>
+  </div>
+
+<script>
+/* =========================
+   Core UI + Hardcoded data
+   ========================= */
+
+const torrents = [
+  { title:'The Last Frontier - S01E01 - 1080p WEBRip [YTS]', size:'1.5 GB', type:'TV / Series', seeders:5421, leechers:12, hash:'9F2A0B3D8C4F7E91A2B3C4D5E6F7A8B9C0D1E2F' },
+  { title:'Interstellar (2014) 2160p UHD BluRay x265 [YTS]', size:'19.4 GB', type:'Movie', seeders:8322, leechers:71, hash:'7E1F9A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F' },
+  { title:'Ubuntu 24.04 LTS Desktop ISO x64', size:'4.2 GB', type:'Software / OS', seeders:12014, leechers:89, hash:'4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1F2A3B' },
+  { title:'The Witcher 3: Wild Hunt – GOTY Edition [GOG]', size:'49.7 GB', type:'Game', seeders:6678, leechers:144, hash:'3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B1C2D' },
+  { title:'Design Patterns in TypeScript (2025) – PDF + Source Code', size:'120 MB', type:'eBook / Programming', seeders:2211, leechers:6, hash:'2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B1C' },
+  { title:'Planet Earth II (2016) Complete 1080p BluRay x265', size:'32.8 GB', type:'Documentary', seeders:4599, leechers:37, hash:'1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B' },
+  { title:'Cyberpunk 2077 v2.3 + DLC [FitGirl Repack]', size:'57.3 GB', type:'Game', seeders:9054, leechers:203, hash:'ABCDEF1234567890ABCDEF1234567890ABCDEF12' },
+  { title:'English Grammar Masterclass – Video Course (2025)', size:'8.9 GB', type:'Learning / Language', seeders:3129, leechers:21, hash:'F1E2D3C4B5A697887766554433221100FFEEDDCC' },
+];
+
+const resultsList = document.getElementById('resultsList');
+const emptyState = document.getElementById('emptyState');
+const searchInput = document.getElementById('searchInput');
+const magnetInput = document.getElementById('magnetInput');
+const addMagnetBtn = document.getElementById('addMagnetBtn');
+const chooseFileBtn = document.getElementById('chooseFileBtn');
+const torrentFileInput = document.getElementById('torrentFile');
+const fileLabel = document.getElementById('fileLabel');
+
+const activeArea = document.getElementById('activeArea');
+const torrentNameEl = document.getElementById('torrentName');
+const torrentStatsEl = document.getElementById('torrentStats');
+const peerCountEl = document.getElementById('peerCount');
+const progressBar = document.getElementById('progressBar');
+const filesList = document.getElementById('filesList');
+const destroyBtn = document.getElementById('destroyBtn');
+
+let client = null;
+let activeTorrent = null;
+
+/* Build a fake magnet URI for simulated data */
+function buildMagnet(t) {
+  return `magnet:?xt=urn:btih:${t.hash}&dn=${encodeURIComponent(t.title)}&tr=udp://tracker.openbittorrent.com:80`;
+}
+
+/* Render simulated results (cards) */
+function renderResults(list) {
+  resultsList.innerHTML = '';
+  if (!list.length) { emptyState.classList.remove('hidden'); return; }
+  emptyState.classList.add('hidden');
+
+  list.forEach(t => {
+    const card = document.createElement('article');
+    card.className = 'bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3';
+    card.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <h3 class="text-sm font-semibold text-slate-100 line-clamp-2">${t.title}</h3>
+        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <span class="inline-flex items-center rounded-full bg-slate-800/80 px-2 py-1">Size: ${t.size}</span>
+          <span class="inline-flex items-center rounded-full bg-slate-800/80 px-2 py-1">${t.type}</span>
+          <span class="inline-flex items-center gap-1 px-1.5 py-1"><span class="text-emerald-400 font-semibold">${t.seeders.toLocaleString()}</span><span class="text-slate-500">Seeders</span></span>
+          <span class="inline-flex items-center gap-1 px-1.5 py-1"><span class="text-orange-400 font-semibold">${t.leechers.toLocaleString()}</span><span class="text-slate-500">Leechers</span></span>
+        </div>
+        <p class="mt-1 text-[11px] text-slate-500 break-all">Info Hash: <span class="text-slate-400">${t.hash}</span></p>
+      </div>
+      <div class="flex flex-col items-stretch md:items-end gap-2 w-full md:w-auto">
+        <button class="copy-btn inline-flex items-center justify-center rounded-xl bg-accent px-4 py-3 text-xs font-semibold text-slate-950">Copy Magnet Link</button>
+      </div>
+    `;
+    // attach data
+    const btn = card.querySelector('.copy-btn');
+    btn.dataset.magnet = buildMagnet(t);
+    resultsList.appendChild(card);
+  });
+  attachCopyHandlers();
+}
+
+/* Copy helpers (same behavior as before) */
+function showCopyFeedback(button) {
+  const originalText = button.textContent.trim();
+  const originalClass = button.className;
+  button.textContent = 'Copied!';
+  button.className = 'inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-3 text-xs font-semibold text-slate-950';
+  setTimeout(()=> { button.textContent = originalText; button.className = originalClass; }, 1000);
+}
+function fallbackCopy(text, button) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); showCopyFeedback(button); } catch(e){ alert('Copy failed.'); }
+  document.body.removeChild(ta);
+}
+function copyToClipboard(text, button) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(()=>showCopyFeedback(button)).catch(()=>fallbackCopy(text,button));
+  } else fallbackCopy(text, button);
+}
+function attachCopyHandlers() {
+  const buttons = document.querySelectorAll('.copy-btn');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', ()=> {
+      const m = btn.dataset.magnet;
+      if (m) copyToClipboard(m, btn);
+    });
+  });
+}
+
+/* Simple search (client-side) */
+function filterTorrents(q) {
+  const s = q.trim().toLowerCase();
+  if (!s) return torrents;
+  return torrents.filter(t => t.title.toLowerCase().includes(s) || t.type.toLowerCase().includes(s) || t.size.toLowerCase().includes(s));
+}
+searchInput.addEventListener('input', (e)=> renderResults(filterTorrents(e.target.value)));
+
+/* Initial render */
+renderResults(torrents);
+
+/* =========================
+   WebTorrent: Add / Manage
+   ========================= */
+
+/* Ensure we have a single client instance */
+function ensureClient() {
+  if (!client) {
+    try {
+      client = new WebTorrent();
+    } catch(e) {
+      alert('WebTorrent could not initialize in this environment.');
+    }
+  }
+}
+
+/* Add a magnet link or torrent buffer */
+function addTorrent(magnetOrFile) {
+  ensureClient();
+  if (!client) return;
+
+  // stop previous torrent
+  if (activeTorrent) {
+    try { activeTorrent.destroy(); } catch(e) {}
+    activeTorrent = null;
+  }
+
+  activeArea.classList.remove('hidden');
+  filesList.innerHTML = '';
+  torrentNameEl.textContent = 'Adding...';
+  torrentStatsEl.textContent = '';
+  progressBar.style.width = '0%';
+  peerCountEl.textContent = 'Peers: 0';
+
+  // Add to client
+  client.add(magnetOrFile, { announce: [/* some common WebRTC trackers */ 'wss://tracker.openwebtorrent.com','wss://tracker.btorrent.xyz','wss://tracker.fastcast.nz'] }, torrent => {
+    activeTorrent = torrent;
+    torrentNameEl.textContent = torrent.name || 'Unnamed torrent';
+    updateStats();
+    // list files
+    filesList.innerHTML = '';
+    torrent.files.forEach((file, idx) => {
+      // file card
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between gap-3 bg-slate-900/70 p-3 rounded-xl border border-slate-800';
+      row.innerHTML = `
+        <div class="min-w-0">
+          <div class="text-sm font-medium text-slate-100 line-clamp-1">${file.name}</div>
+          <div class="text-xs text-slate-400 mt-1">${(file.length/ (1024*1024)).toFixed(2)} MB</div>
+        </div>
+        <div class="flex-shrink-0 flex items-center gap-2">
+          <button class="btn-download px-3 py-2 rounded-lg bg-accent text-slate-950 text-xs font-semibold">Download</button>
+        </div>
+      `;
+      filesList.appendChild(row);
+
+      // when clicking download: get blob and create downloadable link
+      const dlBtn = row.querySelector('.btn-download');
+      dlBtn.addEventListener('click', async () => {
+        dlBtn.disabled = true;
+        dlBtn.textContent = 'Preparing...';
+        try {
+          // try to get blob (streams to memory)
+          file.getBlob((err, blob) => {
+            if (err) {
+              console.error(err);
+              dlBtn.textContent = 'Error';
+              setTimeout(()=> { dlBtn.disabled=false; dlBtn.textContent='Download'; }, 1500);
+              return;
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            dlBtn.textContent = 'Saved';
+            setTimeout(()=> { dlBtn.disabled=false; dlBtn.textContent='Download'; }, 1200);
+          });
+        } catch (ex) {
+          console.error(ex);
+          dlBtn.textContent = 'Failed';
+          setTimeout(()=> { dlBtn.disabled=false; dlBtn.textContent='Download'; }, 1200);
+        }
+      });
+    });
+
+    // update progress via interval
+    const progressUpdater = setInterval(() => {
+      if (!activeTorrent) { clearInterval(progressUpdater); return; }
+      updateStats();
+      if (torrent.done) {
+        clearInterval(progressUpdater);
+      }
+    }, 700);
+
+    torrent.on('done', () => {
+      progressBar.style.width = '100%';
+      torrentStatsEl.textContent = `Completed • Peers: ${torrent.numPeers}`;
+    });
+  });
+}
+
+/* Update stats display */
+function updateStats() {
+  if (!activeTorrent) return;
+  const t = activeTorrent;
+  const percent = Math.round(t.progress * 10000) / 100;
+  progressBar.style.width = `${percent}%`;
+  torrentStatsEl.textContent = `${percent}% • ${formatSpeed(t.downloadSpeed)}/s • ${(t.length / (1024*1024)).toFixed(0)} MB total`;
+  peerCountEl.textContent = `Peers: ${t.numPeers}`;
+}
+
+/* Pretty speed */
+function formatSpeed(bytesPerSec) {
+  if (!bytesPerSec) return '0 KB';
+  const units = ['B','KB','MB','GB'];
+  let b = bytesPerSec;
+  let u = 0;
+  while (b >= 1024 && u < units.length-1) { b /= 1024; u++; }
+  return `${b.toFixed(2)} ${units[u]}`;
+}
+
+/* Destroy / stop torrent */
+destroyBtn.addEventListener('click', () => {
+  if (activeTorrent) {
+    try { activeTorrent.destroy(); } catch(e) {}
+    activeTorrent = null;
+  }
+  progressBar.style.width = '0%';
+  filesList.innerHTML = '';
+  activeArea.classList.add('hidden');
+});
+
+/* =========================
+   UI interactions: magnet + file pick
+   ========================= */
+
+addMagnetBtn.addEventListener('click', () => {
+  const m = magnetInput.value.trim();
+  if (!m) { magnetInput.focus(); return; }
+  try {
+    addTorrent(m);
+  } catch(e) {
+    alert('Failed to add magnet link.');
+    console.error(e);
+  }
+});
+
+chooseFileBtn.addEventListener('click', ()=> torrentFileInput.click());
+
+torrentFileInput.addEventListener('change', (ev) => {
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) { fileLabel.textContent = 'No file chosen'; return; }
+  fileLabel.textContent = f.name;
+  const reader = new FileReader();
+  reader.onload = function() {
+    // WebTorrent accepts the torrent file as a Uint8Array or Buffer
+    const arr = new Uint8Array(this.result);
+    addTorrent(arr);
+  };
+  reader.onerror = function(){ alert('Failed to read file'); };
+  reader.readAsArrayBuffer(f);
+});
+
+/* Enable paste of magnet (handle Ctrl+V / paste event on input) */
+magnetInput.addEventListener('paste', (e) => {
+  // no special handling needed; user can paste then click Add
+});
+
+/* Also allow pressing Enter to add magnet */
+magnetInput.addEventListener('keydown', (e)=> {
+  if (e.key === 'Enter') addMagnetBtn.click();
+});
+
+/* If the user navigates away or refreshes, destroy client to free resources */
+window.addEventListener('beforeunload', ()=> {
+  if (activeTorrent) try { activeTorrent.destroy(); } catch(e) {}
+  if (client) try { client.destroy(); } catch(e) {}
+});
+
+/* Accessibility / touch-target improvements (no extra code needed, buttons are big) */
+
+</script>
+</body>
+</html>
