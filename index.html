@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>torrentDownloader</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- Inter -->
+  <!-- Inter font -->
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
@@ -23,64 +23,50 @@
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- WebTorrent (browser) -->
+  <!-- WebTorrent -->
   <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
 
   <style>
     .line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-    /* Add button overlay: always visible, input has padding-right to avoid text overlap */
     .magnet-row { position: relative; }
-    .magnet-input { padding-right: 96px; } /* space for button */
+    .magnet-input { padding-right: 110px; } /* space for the overlay add button */
     .magnet-add-btn {
       position: absolute;
-      right: 6px;
+      right: 8px;
       top: 50%;
       transform: translateY(-50%);
-      min-width: 76px;
+      min-width: 84px;
       height: 44px;
       border-radius: 12px;
+      z-index: 10;
     }
     @media (min-width: 768px) {
-      .magnet-input { padding-right: 128px; }
-      .magnet-add-btn { min-width: 96px; height:48px; right:10px; border-radius:14px; }
+      .magnet-input { padding-right: 150px; }
+      .magnet-add-btn { min-width: 110px; height:48px; right:12px; border-radius:14px; }
     }
   </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
-  <div class="max-w-4xl mx-auto p-4 pb-12">
+  <div class="max-w-3xl mx-auto p-4 pb-12">
     <!-- Header -->
-    <header class="flex items-center justify-between gap-4 mb-6">
-      <div class="flex items-center gap-3">
-        <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-accent to-sky-500 flex items-center justify-center shadow-soft">
-          <span class="text-xs font-bold uppercase">TD</span>
-        </div>
-        <div>
-          <h1 class="text-xl font-semibold">torrent<span class="text-accent">Downloader</span></h1>
-          <p class="text-xs text-slate-400">Paste magnet or upload .torrent — download in-browser (WebTorrent)</p>
-        </div>
+    <header class="flex items-center gap-3 mb-6">
+      <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-accent to-sky-500 flex items-center justify-center shadow-soft">
+        <span class="text-xs font-bold uppercase">TD</span>
+      </div>
+      <div>
+        <h1 class="text-xl font-semibold">torrent<span class="text-accent">Downloader</span></h1>
+        <p class="text-xs text-slate-400">Paste magnet or upload a .torrent file — then download files or open in a native client.</p>
       </div>
     </header>
 
-    <!-- Browser capability banner (filled by JS) -->
+    <!-- Capability banner -->
     <div id="capBanner" class="mb-4 hidden rounded-xl p-3 text-sm"></div>
 
-    <!-- Search -->
-    <section class="mb-6">
-      <div class="relative">
-        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-          <svg class="h-5 w-5 text-slate-500" viewBox="0 0 24 24" fill="none"><path d="M15.5 15.5L20 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.6"/></svg>
-        </div>
-        <input id="searchInput" type="search" placeholder="Search 15 Million+ verified links..." class="w-full h-12 rounded-full bg-slate-900/90 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-500 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-accent/60" />
-      </div>
-      <p class="mt-2 text-xs text-slate-500">Tip: paste a magnet (magnet:?xt=urn:btih:...) or upload a <code class="text-xs px-1 py-0.5 rounded bg-slate-800">.torrent</code> file.</p>
-    </section>
-
-    <!-- Paste / upload card -->
+    <!-- Magnet input / Add button -->
     <section class="mb-6">
       <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
         <label class="block text-xs text-slate-400 mb-2">Paste Magnet Link or Info Hash</label>
 
-        <!-- magnet row: input + overlay Add button (always visible) -->
         <div class="magnet-row mb-3">
           <input id="magnetInput" class="magnet-input w-full h-12 rounded-xl bg-slate-900 border border-slate-800 px-4 text-sm text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-accent/50" type="text" inputmode="url" placeholder="magnet:?xt=urn:btih:..." />
           <button id="addMagnetBtn" class="magnet-add-btn bg-accent text-slate-950 font-semibold">Add</button>
@@ -120,31 +106,23 @@
 
         <div id="metaNotice" class="mt-3 text-xs text-slate-400 hidden"></div>
 
-        <div id="nativeActionRow" class="mt-3 hidden flex gap-2 items-center">
-          <button id="openNativeBtn" class="px-3 py-2 rounded-lg bg-sky-600 text-slate-950 text-sm font-semibold">Open in native app</button>
-          <button id="copyMagnetForNative" class="px-3 py-2 rounded-lg bg-slate-800 text-sm">Copy Magnet</button>
-          <div class="text-xs text-slate-500">If browser cannot connect, try native torrent apps (qBittorrent, Transmission).</div>
+        <!-- Prominent native-app fallback -->
+        <div id="nativeActionRow" class="mt-4 hidden flex flex-col gap-3">
+          <div class="flex gap-3">
+            <button id="openNativeBtn" class="flex-1 rounded-xl py-3 text-sm font-semibold bg-sky-600 text-slate-950">Open in native app</button>
+            <button id="copyMagnetForNative" class="rounded-xl px-4 py-3 bg-slate-800 text-sm">Copy Magnet</button>
+          </div>
+          <div class="text-xs text-slate-500">If browser cannot connect (common on iOS), tap “Open in native app” to hand the magnet to a native torrent client.</div>
         </div>
       </div>
     </section>
 
-    <!-- Simulated results -->
-    <main aria-live="polite">
-      <div id="resultsList" class="space-y-3"></div>
-      <div id="emptyState" class="hidden mt-10 text-center text-slate-500">No torrents match your search. Try different keywords.</div>
-    </main>
   </div>
 
 <script>
-/* =============
-   Utility + data
-   ============= */
-
-const sampleTorrents = [
-  { title:'The Last Frontier - S01E01 - 1080p WEBRip [YTS]', size:'1.5 GB', type:'TV / Series', seeders:5421, leechers:12, hash:'9F2A0B3D8C4F7E91A2B3C4D5E6F7A8B9C0D1E2F' },
-  { title:'Interstellar (2014) 2160p UHD BluRay x265 [YTS]', size:'19.4 GB', type:'Movie', seeders:8322, leechers:71, hash:'7E1F9A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F' },
-  { title:'Ubuntu 24.04 LTS Desktop ISO x64', size:'4.2 GB', type:'Software / OS', seeders:12014, leechers:89, hash:'4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1F2A3B' },
-];
+/* ============
+   Config & DOM
+   ============ */
 
 const DEFAULT_WSS_TRACKERS = [
   'wss://tracker.openwebtorrent.com',
@@ -155,9 +133,7 @@ const DEFAULT_WSS_TRACKERS = [
   'wss://tracker.skyts.net',
 ];
 
-const resultsList = document.getElementById('resultsList');
-const emptyState = document.getElementById('emptyState');
-const searchInput = document.getElementById('searchInput');
+const capBanner = document.getElementById('capBanner');
 const magnetInput = document.getElementById('magnetInput');
 const addMagnetBtn = document.getElementById('addMagnetBtn');
 const chooseFileBtn = document.getElementById('chooseFileBtn');
@@ -175,40 +151,41 @@ const metaNotice = document.getElementById('metaNotice');
 const nativeActionRow = document.getElementById('nativeActionRow');
 const openNativeBtn = document.getElementById('openNativeBtn');
 const copyMagnetForNative = document.getElementById('copyMagnetForNative');
-const capBanner = document.getElementById('capBanner');
 
 let client = null;
 let activeTorrent = null;
 let metadataTimer = null;
 
-/* =============
-   Capability detection
-   ============= */
+/* ============
+   Capability check
+   ============ */
 
 function supportsWebRTC() {
-  // Basic checks: RTCPeerConnection and WebSocket are required for normal WebTorrent behavior
   const rtc = typeof RTCPeerConnection !== 'undefined' || typeof webkitRTCPeerConnection !== 'undefined' || typeof mozRTCPeerConnection !== 'undefined';
   const ws = typeof WebSocket !== 'undefined';
-  // WebTorrent in browser also depends on proper websocket-to-webrtc trackers (WSS) — but we can't fully test that here.
   return rtc && ws;
 }
 
-function showCapability() {
+function showCapabilityBanner() {
   if (!supportsWebRTC()) {
     capBanner.className = 'mb-4 rounded-xl p-3 text-sm bg-rose-900/60 text-rose-200';
-    capBanner.innerHTML = '<strong>Browser not supported for in-browser torrenting.</strong> Your browser lacks required WebRTC or WebSocket features. You can still open the magnet in a native torrent app using the button after adding.';
+    capBanner.innerHTML = '<strong>Browser not suitable for in-browser torrenting.</strong> Use "Open in native app" or try desktop Chrome/Firefox.';
     capBanner.classList.remove('hidden');
   } else {
     capBanner.className = 'mb-4 rounded-xl p-2 text-sm bg-emerald-900/10 text-emerald-300 border border-emerald-800';
-    capBanner.innerHTML = 'Browser supports WebRTC; in-browser torrenting may work (depends on WebRTC-capable peers).';
+    capBanner.textContent = 'Browser supports WebRTC; in-browser torrenting may work (depends on WebRTC-capable peers).';
     capBanner.classList.remove('hidden');
-    // hide the positive banner after 3s to reduce noise
     setTimeout(()=> capBanner.classList.add('hidden'), 3000);
   }
 }
-showCapability();
+showCapabilityBanner();
 
-/* Basic magnet normalize: magnet or raw infohash -> magnet with trackers */
+/* ============
+   Helpers
+   ============ */
+
+function escapeHtml(s){ return (s+'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 function normalizeToMagnet(input) {
   if (!input) return null;
   input = input.trim();
@@ -222,119 +199,60 @@ function normalizeToMagnet(input) {
   }
   return null;
 }
-function buildMagnetForSample(t) {
-  const trackers = DEFAULT_WSS_TRACKERS.map(tk => `&tr=${encodeURIComponent(tk)}`).join('');
-  return `magnet:?xt=urn:btih:${t.hash}&dn=${encodeURIComponent(t.title)}${trackers}`;
-}
 
-/* Render sample results */
-function renderResults(list) {
-  resultsList.innerHTML = '';
-  if (!list.length) { emptyState.classList.remove('hidden'); return; }
-  emptyState.classList.add('hidden');
-
-  list.forEach(t => {
-    const card = document.createElement('article');
-    card.className = 'bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3';
-    card.innerHTML = `
-      <div class="flex-1 min-w-0">
-        <h3 class="text-sm font-semibold text-slate-100 line-clamp-2">${escapeHtml(t.title)}</h3>
-        <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-          <span class="inline-flex items-center rounded-full bg-slate-800/80 px-2 py-1">Size: ${t.size}</span>
-          <span class="inline-flex items-center rounded-full bg-slate-800/80 px-2 py-1">${t.type}</span>
-          <span class="inline-flex items-center gap-1 px-1.5 py-1"><span class="text-emerald-400 font-semibold">${t.seeders.toLocaleString()}</span><span class="text-slate-500">Seeders</span></span>
-          <span class="inline-flex items-center gap-1 px-1.5 py-1"><span class="text-orange-400 font-semibold">${t.leechers.toLocaleString()}</span><span class="text-slate-500">Leechers</span></span>
-        </div>
-        <p class="mt-1 text-[11px] text-slate-500 break-all">Info Hash: <span class="text-slate-400">${t.hash}</span></p>
-      </div>
-      <div class="flex flex-col items-stretch md:items-end gap-2 w-full md:w-auto">
-        <button class="copy-btn mt-2 md:mt-0 inline-flex items-center justify-center w-full md:w-auto rounded-xl bg-accent px-4 py-3 text-xs md:text-sm font-semibold text-slate-950 transition">Copy Magnet</button>
-        <button class="add-btn mt-2 md:mt-0 inline-flex items-center justify-center w-full md:w-auto rounded-xl bg-slate-800 text-xs md:text-sm font-semibold text-slate-100 transition">Open / Add</button>
-      </div>
-    `;
-    resultsList.appendChild(card);
-
-    const copyBtn = card.querySelector('.copy-btn');
-    copyBtn.dataset.magnet = buildMagnetForSample(t);
-    copyBtn.addEventListener('click', () => copyToClipboard(copyBtn.dataset.magnet, copyBtn));
-
-    const addBtn = card.querySelector('.add-btn');
-    addBtn.addEventListener('click', () => {
-      const m = buildMagnetForSample(t);
-      // set input for clarity and then add
-      magnetInput.value = m;
-      startAddMagnet(m);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  });
-}
-renderResults(sampleTorrents);
-
-/* Escape helper */
-function escapeHtml(s){ return (s+'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-/* Copy helpers */
-function showCopyFeedback(button) {
-  const orig = button.textContent.trim();
-  const origClass = button.className;
-  button.textContent = 'Copied!';
-  button.className = 'inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-3 text-xs font-semibold text-slate-950';
-  setTimeout(()=> { button.textContent = orig; button.className = origClass; }, 1100);
-}
-function fallbackCopy(text, button) {
-  const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
-  document.body.appendChild(ta); ta.select();
-  try { document.execCommand('copy'); showCopyFeedback(button); } catch(e) { alert('Copy failed.'); }
-  document.body.removeChild(ta);
-}
-function copyToClipboard(text, button) {
+function copyToClipboard(text, buttonFallback) {
   if (!text) return;
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(()=>showCopyFeedback(button)).catch(()=>fallbackCopy(text,button));
-  } else fallbackCopy(text, button);
+    navigator.clipboard.writeText(text).then(()=> {
+      if (buttonFallback) {
+        const old = buttonFallback.textContent;
+        buttonFallback.textContent = 'Copied';
+        setTimeout(()=> buttonFallback.textContent = old, 1000);
+      }
+    }).catch(()=> fallbackCopy(text, buttonFallback));
+  } else {
+    fallbackCopy(text, buttonFallback);
+  }
+}
+function fallbackCopy(text, btn) {
+  const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); if (btn){ const old = btn.textContent; btn.textContent='Copied'; setTimeout(()=>btn.textContent=old,1000);} } catch(e){ alert('Copy failed'); }
+  document.body.removeChild(ta);
 }
 
-/* ===============
+/* ============
    WebTorrent logic
-   =============== */
+   ============ */
 
 function ensureClient() {
   if (!client && supportsWebRTC()) {
-    try { client = new WebTorrent(); } catch (e) { console.error('webtorrent init err', e); }
+    try { client = new WebTorrent(); } catch(e) { console.error('WebTorrent init error', e); }
   }
 }
 
 function startAddMagnet(rawInput) {
-  // normalize if raw info-hash
   const magnet = normalizeToMagnet(rawInput) || rawInput;
   if (!magnet || !magnet.startsWith('magnet:?')) {
     metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Invalid magnet or info-hash. Paste a full magnet:? link or upload a .torrent file.';
+    metaNotice.textContent = 'Invalid magnet or info-hash. Paste a magnet:? link or upload a .torrent file.';
     return;
   }
 
-  // show native fallback controls immediately so user can open in native app
+  // always show native fallback controls so user can immediately use them
   nativeActionRow.classList.remove('hidden');
-  openNativeBtn.onclick = () => {
-    // navigate to magnet to trigger OS-level registered torrent app
-    window.location.href = magnet;
-  };
-  copyMagnetForNative.onclick = () => {
-    // copy magnet to clipboard for manual use
-    copyToClipboard(magnet, copyMagnetForNative);
-  };
+  openNativeBtn.onclick = () => { window.location.href = magnet; };
+  copyMagnetForNative.onclick = () => copyToClipboard(magnet, copyMagnetForNative);
 
-  // if browser can't do WebRTC, inform user and stop trying to add to client
   if (!supportsWebRTC()) {
     activeArea.classList.remove('hidden');
     torrentNameEl.textContent = 'Browser not suitable for in-browser torrenting';
-    torrentStatsEl.textContent = 'Use "Open in native app" or upload the .torrent file.';
+    torrentStatsEl.textContent = 'Use "Open in native app" or upload a .torrent file.';
     metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Your browser lacks required features for WebTorrent. Try desktop Chrome/Firefox or a native torrent client.';
+    metaNotice.textContent = 'Your browser lacks required WebRTC features. Try desktop Chrome/Firefox or open the magnet in a native app.';
     return;
   }
 
-  // else proceed with WebTorrent client add
   addTorrent(magnet);
 }
 
@@ -342,11 +260,10 @@ function addTorrent(magnetOrBuffer) {
   ensureClient();
   if (!client) {
     metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'WebTorrent client could not be created in this browser.';
+    metaNotice.textContent = 'WebTorrent client could not be created.';
     return;
   }
 
-  // clean previous
   if (activeTorrent) { try { activeTorrent.destroy(); } catch(e) {} activeTorrent = null; }
   clearMetadataTimer();
 
@@ -359,11 +276,10 @@ function addTorrent(magnetOrBuffer) {
   peerCountEl.textContent = 'Peers: 0';
   nativeActionRow.classList.remove('hidden');
 
-  // start metadata timeout
   metadataTimer = setTimeout(()=> {
     if (activeTorrent && activeTorrent.files && activeTorrent.files.length) return;
     metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Unable to fetch metadata / connect to peers within 20s. Try uploading the .torrent file or using a native client.';
+    metaNotice.textContent = 'Unable to fetch metadata / connect to peers within 20s. Use "Open in native app" or upload the .torrent file.';
   }, 20000);
 
   try {
@@ -372,37 +288,33 @@ function addTorrent(magnetOrBuffer) {
       torrentNameEl.textContent = torrent.name || 'Unnamed torrent';
       updateStats();
 
-      // ensure files are deselected to avoid auto-downloading (we will call select before getBlob)
+      // ensure files deselected by default
       try { torrent.files && torrent.files.forEach(f => { if (typeof f.deselect === 'function') try { f.deselect(); } catch(e){} }); } catch(e){}
 
       if (torrent.files && torrent.files.length) {
         populateFiles(torrent);
         clearMetadataTimer();
       } else {
-        torrent.on('metadata', () => {
-          populateFiles(torrent);
-          clearMetadataTimer();
-        });
+        torrent.on('metadata', () => { populateFiles(torrent); clearMetadataTimer(); });
       }
 
-      // progress loop
-      const updater = setInterval(() => {
+      const updater = setInterval(()=> {
         if (!activeTorrent) { clearInterval(updater); return; }
         updateStats();
       }, 700);
 
-      torrent.on('done', () => {
+      torrent.on('done', ()=> {
         progressBar.style.width = '100%';
         torrentStatsEl.textContent = `Completed • Peers: ${torrent.numPeers || 0}`;
         clearInterval(updater);
       });
 
-      torrent.on('wire', () => updateStats());
+      torrent.on('wire', ()=> updateStats());
     });
   } catch (err) {
     console.error('Add torrent error', err);
     metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Failed to add torrent. The browser may block WebRTC or the magnet is invalid.';
+    metaNotice.textContent = 'Failed to add torrent. Magnet may be invalid or WebRTC blocked.';
     clearMetadataTimer();
   }
 }
@@ -435,7 +347,7 @@ function populateFiles(torrent) {
       dlBtn.disabled = true;
       dlBtn.textContent = 'Preparing...';
 
-      // select file to start piece fetching, then get blob
+      // select file (start fetching pieces)
       try { if (typeof file.select === 'function') file.select(); } catch(e) { console.warn('file.select failed', e); }
 
       file.getBlob((err, blob) => {
@@ -468,7 +380,6 @@ function updateStats() {
   torrentStatsEl.textContent = `${percent}% • ${formatSpeed(t.downloadSpeed || 0)}/s • ${(t.length / (1024*1024)).toFixed(0)} MB total`;
   peerCountEl.textContent = `Peers: ${t.numPeers || 0}`;
 }
-
 function formatSpeed(bytesPerSec) {
   if (!bytesPerSec) return '0 KB';
   const units = ['B','KB','MB','GB'];
@@ -478,18 +389,10 @@ function formatSpeed(bytesPerSec) {
   return `${b.toFixed(2)} ${units[u]}`;
 }
 
-/* Stop */
-destroyBtn.addEventListener('click', () => {
-  if (activeTorrent) try { activeTorrent.destroy(); } catch(e) {}
-  activeTorrent = null;
-  progressBar.style.width = '0%';
-  filesList.innerHTML = '';
-  activeArea.classList.add('hidden');
-  metaNotice.classList.add('hidden');
-  nativeActionRow.classList.add('hidden');
-});
+/* ============
+   UI wiring
+   ============ */
 
-/* UI bindings */
 addMagnetBtn.addEventListener('click', () => {
   const raw = magnetInput.value.trim();
   if (!raw) { magnetInput.focus(); return; }
@@ -505,11 +408,7 @@ torrentFileInput.addEventListener('change', (ev) => {
   const reader = new FileReader();
   reader.onload = function() {
     const arr = new Uint8Array(this.result);
-    // If browser cannot run WebTorrent we still try to show metadata using getTorrent? but safer to just attempt add
-    if (!supportsWebRTC()) {
-      // show the native controls but still try: some browsers may still allow reading metadata from .torrent
-      nativeActionRow.classList.remove('hidden');
-    }
+    if (!supportsWebRTC()) nativeActionRow.classList.remove('hidden');
     addTorrent(arr);
   };
   reader.onerror = function() {
@@ -519,7 +418,17 @@ torrentFileInput.addEventListener('change', (ev) => {
   reader.readAsArrayBuffer(f);
 });
 
-/* Cleanup */
+destroyBtn.addEventListener('click', () => {
+  if (activeTorrent) try { activeTorrent.destroy(); } catch(e) {}
+  activeTorrent = null;
+  progressBar.style.width = '0%';
+  filesList.innerHTML = '';
+  activeArea.classList.add('hidden');
+  metaNotice.classList.add('hidden');
+  nativeActionRow.classList.add('hidden');
+});
+
+/* cleanup */
 window.addEventListener('beforeunload', () => {
   if (activeTorrent) try { activeTorrent.destroy(); } catch(e) {}
   if (client) try { client.destroy(); } catch(e) {}
