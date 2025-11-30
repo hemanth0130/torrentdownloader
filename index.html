@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <title>torrentDownloader</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- Inter font -->
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-  <!-- Tailwind config + CDN -->
+  
   <script>
+    // Configuration for Tailwind
     tailwind = window.tailwind || {};
     tailwind.config = {
       theme: {
@@ -23,13 +23,13 @@
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- WebTorrent -->
   <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
 
   <style>
+    /* Custom CSS for visual layout */
     .line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
     .magnet-row { position: relative; }
-    .magnet-input { padding-right: 110px; } /* space for the overlay add button */
+    .magnet-input { padding-right: 110px; } 
     .magnet-add-btn {
       position: absolute;
       right: 8px;
@@ -39,7 +39,10 @@
       height: 44px;
       border-radius: 12px;
       z-index: 10;
+      transition: all 0.15s ease-in-out;
     }
+    .magnet-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
     @media (min-width: 768px) {
       .magnet-input { padding-right: 150px; }
       .magnet-add-btn { min-width: 110px; height:48px; right:12px; border-radius:14px; }
@@ -48,7 +51,7 @@
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
   <div class="max-w-3xl mx-auto p-4 pb-12">
-    <!-- Header -->
+    
     <header class="flex items-center gap-3 mb-6">
       <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-accent to-sky-500 flex items-center justify-center shadow-soft">
         <span class="text-xs font-bold uppercase">TD</span>
@@ -59,10 +62,8 @@
       </div>
     </header>
 
-    <!-- Capability banner -->
     <div id="capBanner" class="mb-4 hidden rounded-xl p-3 text-sm"></div>
 
-    <!-- Magnet input / Add button -->
     <section class="mb-6">
       <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
         <label class="block text-xs text-slate-400 mb-2">Paste Magnet Link or Info Hash</label>
@@ -84,7 +85,6 @@
       </div>
     </section>
 
-    <!-- Active torrent area -->
     <section id="activeArea" class="mb-6 hidden">
       <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
@@ -94,7 +94,7 @@
           </div>
           <div class="text-right">
             <div id="peerCount" class="text-xs text-slate-400">Peers: 0</div>
-            <button id="destroyBtn" class="mt-2 text-xs px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">Stop</button>
+            <button id="destroyBtn" class="mt-2 text-xs px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 transition">Stop</button>
           </div>
         </div>
 
@@ -104,13 +104,12 @@
 
         <div id="filesList" class="mt-4 space-y-3"></div>
 
-        <div id="metaNotice" class="mt-3 text-xs text-slate-400 hidden"></div>
+        <div id="metaNotice" class="mt-3 text-xs text-rose-400 hidden"></div>
 
-        <!-- Prominent native-app fallback -->
         <div id="nativeActionRow" class="mt-4 hidden flex flex-col gap-3">
           <div class="flex gap-3">
-            <button id="openNativeBtn" class="flex-1 rounded-xl py-3 text-sm font-semibold bg-sky-600 text-slate-950">Open in native app</button>
-            <button id="copyMagnetForNative" class="rounded-xl px-4 py-3 bg-slate-800 text-sm">Copy Magnet</button>
+            <button id="openNativeBtn" class="flex-1 rounded-xl py-3 text-sm font-semibold bg-sky-600 text-slate-950 hover:bg-sky-500 transition">Open in native app</button>
+            <button id="copyMagnetForNative" class="rounded-xl px-4 py-3 bg-slate-800 text-sm hover:bg-slate-700 transition">Copy Magnet</button>
           </div>
           <div class="text-xs text-slate-500">If browser cannot connect (common on iOS), tap “Open in native app” to hand the magnet to a native torrent client.</div>
         </div>
@@ -131,12 +130,12 @@ const DEFAULT_WSS_TRACKERS = [
   'wss://tracker.webtorrent.io',
   'wss://tracker.opentrackr.org',
   'wss://tracker.skyts.net',
-];
+  'wss://ws.btorrent.xyz' // Added another common one for redundancy
+].map(t => `&tr=${encodeURIComponent(t)}`).join(''); // Format for magnet link construction
 
 const capBanner = document.getElementById('capBanner');
 const magnetInput = document.getElementById('magnetInput');
 const addMagnetBtn = document.getElementById('addMagnetBtn');
-const chooseFileBtn = document.getElementById('chooseFileBtn');
 const torrentFileInput = document.getElementById('torrentFile');
 const fileLabel = document.getElementById('fileLabel');
 
@@ -155,6 +154,7 @@ const copyMagnetForNative = document.getElementById('copyMagnetForNative');
 let client = null;
 let activeTorrent = null;
 let metadataTimer = null;
+let statsUpdater = null;
 
 /* ============
    Capability check
@@ -167,14 +167,15 @@ function supportsWebRTC() {
 }
 
 function showCapabilityBanner() {
-  if (!supportsWebRTC()) {
+  const isSupported = supportsWebRTC();
+  capBanner.classList.remove('hidden');
+
+  if (!isSupported) {
     capBanner.className = 'mb-4 rounded-xl p-3 text-sm bg-rose-900/60 text-rose-200';
-    capBanner.innerHTML = '<strong>Browser not suitable for in-browser torrenting.</strong> Use "Open in native app" or try desktop Chrome/Firefox.';
-    capBanner.classList.remove('hidden');
+    capBanner.innerHTML = '⚠️ **Browser not suitable for in-browser torrenting.** Use "Open in native app" or try desktop Chrome/Firefox.';
   } else {
     capBanner.className = 'mb-4 rounded-xl p-2 text-sm bg-emerald-900/10 text-emerald-300 border border-emerald-800';
-    capBanner.textContent = 'Browser supports WebRTC; in-browser torrenting may work (depends on WebRTC-capable peers).';
-    capBanner.classList.remove('hidden');
+    capBanner.textContent = '✅ Browser supports WebRTC; in-browser torrenting may work (requires WebRTC-capable peers).';
     setTimeout(()=> capBanner.classList.add('hidden'), 3000);
   }
 }
@@ -190,35 +191,65 @@ function normalizeToMagnet(input) {
   if (!input) return null;
   input = input.trim();
   if (/^magnet:\?/i.test(input)) return input;
+  
+  // Clean up input that might be wrapped in quotes or tags
   input = input.replace(/^<|>$/g, '').replace(/^"|"$/g, '');
+  
+  // Check for 40-character hex info-hash
   const hexMatch = input.match(/^[0-9a-fA-F]{40}$/);
+  // Check for 32-character base32 info-hash
   const base32Match = input.match(/^[A-Z2-7]{32}$/i);
+  
   if (hexMatch || base32Match) {
-    const trackers = DEFAULT_WSS_TRACKERS.map(t => `&tr=${encodeURIComponent(t)}`).join('');
-    return `magnet:?xt=urn:btih:${input}${trackers}`;
+    // Construct magnet link with pre-formatted trackers
+    return `magnet:?xt=urn:btih:${input}${DEFAULT_WSS_TRACKERS}`;
   }
   return null;
 }
 
 function copyToClipboard(text, buttonFallback) {
   if (!text) return;
+  const originalText = buttonFallback ? buttonFallback.textContent : 'Copy';
+  
+  // Uses modern navigator.clipboard API if available and secure
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text).then(()=> {
       if (buttonFallback) {
-        const old = buttonFallback.textContent;
-        buttonFallback.textContent = 'Copied';
-        setTimeout(()=> buttonFallback.textContent = old, 1000);
+        buttonFallback.textContent = '✅ Copied';
+        setTimeout(()=> buttonFallback.textContent = originalText, 1000);
       }
-    }).catch(()=> fallbackCopy(text, buttonFallback));
+    }).catch(()=> fallbackCopy(text, buttonFallback, originalText)); // Fallback if modern API fails
   } else {
-    fallbackCopy(text, buttonFallback);
+    fallbackCopy(text, buttonFallback, originalText);
   }
 }
-function fallbackCopy(text, btn) {
-  const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+
+function fallbackCopy(text, btn, originalText) {
+  const ta = document.createElement('textarea'); ta.value = text; 
+  ta.style.position='fixed'; ta.style.left='-9999px';
   document.body.appendChild(ta); ta.select();
-  try { document.execCommand('copy'); if (btn){ const old = btn.textContent; btn.textContent='Copied'; setTimeout(()=>btn.textContent=old,1000);} } catch(e){ alert('Copy failed'); }
+  try { 
+    document.execCommand('copy'); 
+    if (btn){ 
+      btn.textContent='✅ Copied'; 
+      setTimeout(()=>btn.textContent=originalText,1000);
+    } 
+  } catch(e){ 
+    alert('Copy failed: Your browser does not support automatic clipboard access.'); 
+    if (btn) btn.textContent = originalText;
+  }
   document.body.removeChild(ta);
+}
+
+function clearUiState() {
+    filesList.innerHTML = '';
+    activeArea.classList.add('hidden');
+    metaNotice.classList.add('hidden');
+    nativeActionRow.classList.add('hidden');
+    progressBar.style.width = '0%';
+    torrentNameEl.textContent = 'Adding...';
+    torrentStatsEl.textContent = 'Waiting for metadata...';
+    peerCountEl.textContent = 'Peers: 0';
 }
 
 /* ============
@@ -227,94 +258,114 @@ function fallbackCopy(text, btn) {
 
 function ensureClient() {
   if (!client && supportsWebRTC()) {
-    try { client = new WebTorrent(); } catch(e) { console.error('WebTorrent init error', e); }
+    // WebTorrent uses global WebTorrent object from the CDN script
+    if (typeof WebTorrent === 'function') {
+      try { 
+        client = new WebTorrent(); 
+        client.on('error', (err) => {
+          console.error('WebTorrent Client Error:', err);
+          metaNotice.classList.remove('hidden');
+          metaNotice.textContent = `Client Error: ${err.message}. Try reloading or using a native client.`;
+        });
+      } catch(e) { 
+        console.error('WebTorrent init error', e); 
+        metaNotice.classList.remove('hidden');
+        metaNotice.textContent = 'Failed to create WebTorrent client instance.';
+        client = null;
+      }
+    } else {
+      console.error('WebTorrent library not loaded.');
+      metaNotice.classList.remove('hidden');
+      metaNotice.textContent = 'WebTorrent library failed to load. Check your network or CDN access.';
+    }
   }
 }
 
 function startAddMagnet(rawInput) {
   const magnet = normalizeToMagnet(rawInput) || rawInput;
+  clearUiState();
+
   if (!magnet || !magnet.startsWith('magnet:?')) {
     metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Invalid magnet or info-hash. Paste a magnet:? link or upload a .torrent file.';
+    metaNotice.textContent = '❌ Invalid magnet link or info-hash. Paste a magnet:? link or a 40-char hash.';
     return;
   }
 
-  // always show native fallback controls so user can immediately use them
+  // Always set up native fallback controls
   nativeActionRow.classList.remove('hidden');
   openNativeBtn.onclick = () => { window.location.href = magnet; };
   copyMagnetForNative.onclick = () => copyToClipboard(magnet, copyMagnetForNative);
 
-  if (!supportsWebRTC()) {
-    activeArea.classList.remove('hidden');
-    torrentNameEl.textContent = 'Browser not suitable for in-browser torrenting';
-    torrentStatsEl.textContent = 'Use "Open in native app" or upload a .torrent file.';
-    metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Your browser lacks required WebRTC features. Try desktop Chrome/Firefox or open the magnet in a native app.';
-    return;
-  }
-
+  // If input is valid, proceed
+  magnetInput.value = ''; // Clear input for next use
   addTorrent(magnet);
 }
 
 function addTorrent(magnetOrBuffer) {
   ensureClient();
-  if (!client) {
-    metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'WebTorrent client could not be created.';
-    return;
+  if (!client) return; // Client error already displayed by ensureClient
+
+  if (activeTorrent) { 
+    console.log('Destroying previous torrent.');
+    try { activeTorrent.destroy(); } catch(e) { console.warn('Previous torrent destroy failed:', e); } 
+    activeTorrent = null; 
   }
-
-  if (activeTorrent) { try { activeTorrent.destroy(); } catch(e) {} activeTorrent = null; }
+  clearInterval(statsUpdater);
   clearMetadataTimer();
-
+  
   activeArea.classList.remove('hidden');
-  filesList.innerHTML = '';
-  metaNotice.classList.add('hidden');
-  torrentNameEl.textContent = 'Adding...';
-  torrentStatsEl.textContent = 'Waiting for metadata...';
-  progressBar.style.width = '0%';
-  peerCountEl.textContent = 'Peers: 0';
-  nativeActionRow.classList.remove('hidden');
 
+  // Set the 20s metadata timeout
   metadataTimer = setTimeout(()=> {
-    if (activeTorrent && activeTorrent.files && activeTorrent.files.length) return;
-    metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Unable to fetch metadata / connect to peers within 20s. Use "Open in native app" or upload the .torrent file.';
+    if (activeTorrent && (!activeTorrent.files || !activeTorrent.files.length)) {
+      metaNotice.classList.remove('hidden');
+      metaNotice.textContent = '⏳ Unable to fetch metadata / connect to peers within 20s. Try "Open in native app".';
+    }
   }, 20000);
 
   try {
-    client.add(magnetOrBuffer, { announce: DEFAULT_WSS_TRACKERS }, (torrent) => {
+    // Announce trackers are only needed for buffer/file input, but safe to pass always
+    const options = { announce: DEFAULT_WSS_TRACKERS.split('&tr=').filter(t => t).map(decodeURIComponent) };
+    
+    client.add(magnetOrBuffer, options, (torrent) => {
       activeTorrent = torrent;
       torrentNameEl.textContent = torrent.name || 'Unnamed torrent';
       updateStats();
 
-      // ensure files deselected by default
-      try { torrent.files && torrent.files.forEach(f => { if (typeof f.deselect === 'function') try { f.deselect(); } catch(e){} }); } catch(e){}
-
-      if (torrent.files && torrent.files.length) {
-        populateFiles(torrent);
-        clearMetadataTimer();
-      } else {
-        torrent.on('metadata', () => { populateFiles(torrent); clearMetadataTimer(); });
-      }
-
-      const updater = setInterval(()=> {
-        if (!activeTorrent) { clearInterval(updater); return; }
+      // Start regular stat updates
+      statsUpdater = setInterval(()=> {
+        if (!activeTorrent) { clearInterval(statsUpdater); return; }
         updateStats();
       }, 700);
 
-      torrent.on('done', ()=> {
-        progressBar.style.width = '100%';
-        torrentStatsEl.textContent = `Completed • Peers: ${torrent.numPeers || 0}`;
-        clearInterval(updater);
+      // Handle metadata arrival
+      torrent.on('metadata', () => { 
+        torrentNameEl.textContent = torrent.name || 'Unnamed torrent'; // Update name if it wasn't available before
+        populateFiles(torrent); 
+        clearMetadataTimer(); 
       });
 
+      // Handle download completion
+      torrent.on('done', ()=> {
+        progressBar.style.width = '100%';
+        torrentStatsEl.textContent = `🎉 Completed • Peers: ${torrent.numPeers || 0}`;
+        clearInterval(statsUpdater);
+      });
+
+      // Handle peer/wire connection updates
       torrent.on('wire', ()=> updateStats());
+
+      // If files are immediately available (from .torrent file or cached), display them
+      if (torrent.files && torrent.files.length) {
+        populateFiles(torrent);
+        clearMetadataTimer();
+      }
+
     });
   } catch (err) {
     console.error('Add torrent error', err);
     metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Failed to add torrent. Magnet may be invalid or WebRTC blocked.';
+    metaNotice.textContent = `❌ Failed to add torrent. Reason: ${err.message}.`;
     clearMetadataTimer();
   }
 }
@@ -324,11 +375,14 @@ function clearMetadataTimer() { if (metadataTimer) { clearTimeout(metadataTimer)
 function populateFiles(torrent) {
   filesList.innerHTML = '';
   if (!torrent.files || !torrent.files.length) {
-    filesList.innerHTML = '<div class="text-xs text-slate-400">No files in this torrent.</div>';
+    filesList.innerHTML = '<div class="text-xs text-slate-400">No files found in torrent metadata.</div>';
     return;
   }
 
   torrent.files.forEach(file => {
+    // Initially deselect the file to prevent automatic full download
+    try { if (typeof file.deselect === 'function') file.deselect(); } catch(e) {}
+    
     const row = document.createElement('div');
     row.className = 'flex items-center justify-between gap-3 bg-slate-900/70 p-3 rounded-xl border border-slate-800';
     row.innerHTML = `
@@ -337,7 +391,7 @@ function populateFiles(torrent) {
         <div class="text-xs text-slate-400 mt-1">${(file.length / (1024*1024)).toFixed(2)} MB</div>
       </div>
       <div class="flex-shrink-0 flex items-center gap-2">
-        <button class="btn-download px-3 py-2 rounded-lg bg-accent text-slate-950 text-xs font-semibold">Download</button>
+        <button class="btn-download px-3 py-2 rounded-lg bg-accent text-slate-950 text-xs font-semibold hover:bg-sky-500 transition">Download</button>
       </div>
     `;
     filesList.appendChild(row);
@@ -345,18 +399,24 @@ function populateFiles(torrent) {
     const dlBtn = row.querySelector('.btn-download');
     dlBtn.addEventListener('click', () => {
       dlBtn.disabled = true;
+      const originalText = dlBtn.textContent;
       dlBtn.textContent = 'Preparing...';
 
-      // select file (start fetching pieces)
+      // Select file to start fetching pieces
       try { if (typeof file.select === 'function') file.select(); } catch(e) { console.warn('file.select failed', e); }
 
       file.getBlob((err, blob) => {
+        dlBtn.disabled = false; // Always re-enable button after attempt
+        dlBtn.textContent = originalText;
+        
         if (err || !blob) {
           console.error('getBlob error', err);
-          dlBtn.textContent = 'Failed';
-          setTimeout(()=> { dlBtn.disabled=false; dlBtn.textContent='Download'; }, 1400);
+          dlBtn.textContent = '❌ Failed';
+          setTimeout(()=> { dlBtn.textContent=originalText; }, 1400);
           return;
         }
+
+        // Trigger file download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -365,8 +425,9 @@ function populateFiles(torrent) {
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        dlBtn.textContent = 'Saved';
-        setTimeout(()=> { dlBtn.disabled=false; dlBtn.textContent='Download'; }, 1200);
+        
+        dlBtn.textContent = '💾 Saved';
+        setTimeout(()=> { dlBtn.textContent=originalText; }, 1200);
       });
     });
   });
@@ -377,9 +438,15 @@ function updateStats() {
   const t = activeTorrent;
   const percent = Math.round((t.progress || 0) * 10000) / 100;
   progressBar.style.width = `${percent}%`;
-  torrentStatsEl.textContent = `${percent}% • ${formatSpeed(t.downloadSpeed || 0)}/s • ${(t.length / (1024*1024)).toFixed(0)} MB total`;
+  
+  const totalMB = (t.length / (1024*1024)).toFixed(0);
+  const downloadedMB = (t.downloaded / (1024*1024)).toFixed(1);
+  const uploadSpeed = formatSpeed(t.uploadSpeed || 0);
+
+  torrentStatsEl.textContent = `${percent}% (${downloadedMB}/${totalMB} MB) • ↓ ${formatSpeed(t.downloadSpeed || 0)}/s ↑ ${uploadSpeed}/s`;
   peerCountEl.textContent = `Peers: ${t.numPeers || 0}`;
 }
+
 function formatSpeed(bytesPerSec) {
   if (!bytesPerSec) return '0 KB';
   const units = ['B','KB','MB','GB'];
@@ -398,37 +465,46 @@ addMagnetBtn.addEventListener('click', () => {
   if (!raw) { magnetInput.focus(); return; }
   startAddMagnet(raw);
 });
-magnetInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addMagnetBtn.click(); });
 
-chooseFileBtn.addEventListener('click', () => torrentFileInput.click());
+magnetInput.addEventListener('keydown', (e) => { 
+  if (e.key === 'Enter') addMagnetBtn.click(); 
+});
+
+// File input logic
+document.getElementById('chooseFileBtn').addEventListener('click', () => torrentFileInput.click());
 torrentFileInput.addEventListener('change', (ev) => {
   const f = ev.target.files && ev.target.files[0];
   if (!f) { fileLabel.textContent = 'No file chosen'; return; }
   fileLabel.textContent = f.name;
+
   const reader = new FileReader();
   reader.onload = function() {
     const arr = new Uint8Array(this.result);
-    if (!supportsWebRTC()) nativeActionRow.classList.remove('hidden');
-    addTorrent(arr);
+    startAddMagnet(f.name); // Clear UI and setup native button with *name* for context
+    addTorrent(arr); // Add torrent using the ArrayBuffer
   };
   reader.onerror = function() {
+    fileLabel.textContent = 'Read failed';
     metaNotice.classList.remove('hidden');
-    metaNotice.textContent = 'Failed to read .torrent file.';
+    metaNotice.textContent = '❌ Failed to read .torrent file.';
   };
   reader.readAsArrayBuffer(f);
 });
 
+
+// Destroy button logic
 destroyBtn.addEventListener('click', () => {
-  if (activeTorrent) try { activeTorrent.destroy(); } catch(e) {}
+  if (activeTorrent) {
+    console.log('User stopped torrent.');
+    try { activeTorrent.destroy(); } catch(e) {}
+  }
   activeTorrent = null;
-  progressBar.style.width = '0%';
-  filesList.innerHTML = '';
-  activeArea.classList.add('hidden');
-  metaNotice.classList.add('hidden');
-  nativeActionRow.classList.add('hidden');
+  clearInterval(statsUpdater);
+  clearMetadataTimer();
+  clearUiState();
 });
 
-/* cleanup */
+/* cleanup on window close/reload */
 window.addEventListener('beforeunload', () => {
   if (activeTorrent) try { activeTorrent.destroy(); } catch(e) {}
   if (client) try { client.destroy(); } catch(e) {}
@@ -436,3 +512,4 @@ window.addEventListener('beforeunload', () => {
 </script>
 </body>
 </html>
+
